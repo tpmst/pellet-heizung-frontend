@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pellet Heizung Dashboard</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" defer></script>
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <main class="container">
+      <section id="login-section" class="card">
+        <h1>Login</h1>
+        <p class="hint">Melde dich mit deinem Firebase User-Account an.</p>
+        <form id="login-form">
+          <label>
+            E-Mail
+            <input id="email" type="email" autocomplete="email" required />
+          </label>
+          <label>
+            Passwort
+            <input id="password" type="password" autocomplete="current-password" required />
+          </label>
+          <button type="submit">Anmelden</button>
+        </form>
+        <p id="login-error" class="error" role="alert"></p>
+      </section>
+
+      <section id="dashboard-section" class="card hidden">
+        <div class="header-row">
+          <h1>Messwerte der letzten 30 Tage</h1>
+          <button id="logout-button" type="button" class="secondary">Logout</button>
+        </div>
+        <p id="status" class="hint">Lade Daten…</p>
+
+        <div class="chart-grid">
+          <article>
+            <h2>Temperatur (°C)</h2>
+            <canvas id="temperature-chart"></canvas>
+          </article>
+          <article>
+            <h2>Luftfeuchtigkeit (%)</h2>
+            <canvas id="humidity-chart"></canvas>
+          </article>
+          <article>
+            <h2>Abstand (cm)</h2>
+            <canvas id="distance-chart"></canvas>
+          </article>
+        </div>
+      </section>
+
+      <section class="card config-note">
+        <strong>Hinweis:</strong> Hinterlege deine Firebase-Konfiguration in
+        <code>app.js</code> im Objekt <code>firebaseConfig</code>.
+      </section>
+    </main>
+  </body>
+</html>
