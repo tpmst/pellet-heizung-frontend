@@ -7,6 +7,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
 import {
   getFirestore,
+  Timestamp,
   collection,
   getDocs,
   orderBy,
@@ -50,8 +51,21 @@ function setDashboardVisible(isVisible) {
   dashboardSection.classList.toggle("hidden", !isVisible);
 }
 
-function unixSecondsToLabel(unixSeconds) {
-  return new Date(unixSeconds * 1000).toLocaleString("de-DE");
+function normalizeTimestampToMillis(value) {
+  if (value && typeof value.toMillis === "function") {
+    return value.toMillis();
+  }
+
+  if (typeof value === "number") {
+    return value < 1e12 ? value * 1000 : value;
+  }
+
+  return NaN;
+}
+
+function timestampToLabel(value) {
+  const timestampMillis = normalizeTimestampToMillis(value);
+  return Number.isFinite(timestampMillis) ? new Date(timestampMillis).toLocaleString("de-DE") : "-";
 }
 
 function destroyCharts() {
@@ -64,7 +78,7 @@ function destroyCharts() {
 function renderCharts(measurements) {
   destroyCharts();
 
-  const labels = measurements.map((item) => unixSecondsToLabel(item.timestamp));
+  const labels = measurements.map((item) => timestampToLabel(item.timestamp));
 
   for (const config of chartConfigs) {
     const canvas = document.getElementById(config.elementId);
@@ -105,28 +119,42 @@ function renderCharts(measurements) {
 }
 
 async function loadLast30Days() {
-  const now = Math.floor(Date.now() / 1000);
-  const thirtyDaysAgo = now - 30 * 24 * 60 * 60;
+  const now = Date.now();
+  const thirtyDaysAgoMillis = now - 30 * 24 * 60 * 60 * 1000;
+  const thirtyDaysAgoTimestamp = Timestamp.fromMillis(thirtyDaysAgoMillis);
 
-  const measurementsQuery = query(
+  const timestampMeasurementsQuery = query(
     collection(db, "measurements"),
-    where("timestamp", ">=", thirtyDaysAgo),
+    where("timestamp", ">=", thirtyDaysAgoTimestamp),
     orderBy("timestamp", "asc")
   );
-
-  const snapshot = await getDocs(measurementsQuery);
+  const numericMeasurementsQuery = query(
+    collection(db, "measurements"),
+    where("timestamp", ">=", Math.floor(thirtyDaysAgoMillis / 1000)),
+    orderBy("timestamp", "asc")
+  );
+  let snapshot = await getDocs(timestampMeasurementsQuery);
+  if (snapshot.empty) {
+    snapshot = await getDocs(numericMeasurementsQuery);
+  }
 
   const measurements = snapshot.docs
     .map((doc) => {
       const data = doc.data();
       return {
-        timestamp: Number(data.timestamp),
+        timestamp: data.timestamp,
         temperature: Number(data.temperature),
         humidity: Number(data.humidity),
         distance: Number(data.distance),
       };
     })
-    .filter((item) => Number.isFinite(item.timestamp));
+    .filter(
+      (item) =>
+        Number.isFinite(normalizeTimestampToMillis(item.timestamp)) &&
+        Number.isFinite(item.temperature) &&
+        Number.isFinite(item.humidity) &&
+        Number.isFinite(item.distance)
+    );
 
   if (!measurements.length) {
     statusText.textContent = "Keine Messwerte in den letzten 30 Tagen gefunden.";
