@@ -1,0 +1,107 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  margin: 0;
+  background: #f4f6f8;
+  color: #1f2933;
+}
+
+.container {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 24px;
+  display: grid;
+  gap: 16px;
+}
+
+.card {
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08);
+  padding: 16px;
+}
+
+.hidden {
+  display: none;
+}
+
+form {
+  display: grid;
+  gap: 12px;
+  max-width: 360px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  font-weight: 600;
+}
+
+input,
+button {
+  border: 1px solid #c7d2da;
+  border-radius: 8px;
+  padding: 10px;
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+  background: #0d6efd;
+  border-color: #0d6efd;
+  color: #fff;
+  font-weight: 600;
+}
+
+button.secondary {
+  background: #6c757d;
+  border-color: #6c757d;
+}
+
+.error {
+  color: #b42318;
+  min-height: 1.5em;
+}
+
+.hint {
+  color: #52606d;
+}
+
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.chart-grid {
+  margin-top: 12px;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background: #10131a;
+    color: #e6edf3;
+  }
+
+  .card {
+    background: #1a1f29;
+    box-shadow: none;
+  }
+
+  input {
+    background: #121723;
+    color: #e6edf3;
+    border-color: #334155;
+  }
+
+  .hint {
+    color: #9aa8b5;
+  }
+}
