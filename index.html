@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pellet Heizung Dashboard</title>
+    <!-- Fixes the missing favicon warning -->
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="./styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js" defer></script>
     <script type="module" src="./app.js"></script>
@@ -34,7 +36,12 @@
         </div>
         <p id="status" class="hint">Lade Daten…</p>
 
+        <!-- Inside your #dashboard-section -> .chart-grid -->
         <div class="chart-grid">
+          <article>
+            <h2>Restvolumen (m³)</h2>
+            <canvas id="volume-chart"></canvas>
+          </article>
           <article>
             <h2>Temperatur (°C)</h2>
             <canvas id="temperature-chart"></canvas>
@@ -51,8 +58,8 @@
       </section>
 
       <section class="card config-note">
-        <strong>Hinweis:</strong> Hinterlege deine Firebase-Konfiguration in
-        <code>app.js</code> im Objekt <code>firebaseConfig</code>.
+        <strong>Hinweis:</strong> Deine Firebase-Konfiguration ist in
+        <code>config.js</code> hinterlegt.
       </section>
     </main>
   </body>

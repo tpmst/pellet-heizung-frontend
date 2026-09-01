@@ -1,12 +1,29 @@
 :root {
   color-scheme: light dark;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --bg-color: #f4f6f8;
+  --card-bg: #ffffff;
+  --text-color: #1f2933;
+  --hint-color: #52606d;
+  --input-bg: #ffffff;
+  --input-border: #c7d2da;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-color: #10131a;
+    --card-bg: #1a1f29;
+    --text-color: #e6edf3;
+    --hint-color: #9aa8b5;
+    --input-bg: #121723;
+    --input-border: #334155;
+  }
 }
 
 body {
   margin: 0;
-  background: #f4f6f8;
-  color: #1f2933;
+  background: var(--bg-color);
+  color: var(--text-color);
 }
 
 .container {
@@ -18,7 +35,7 @@ body {
 }
 
 .card {
-  background: #ffffff;
+  background: var(--card-bg);
   border-radius: 12px;
   box-shadow: 0 3px 10px rgba(15, 23, 42, 0.08);
   padding: 16px;
@@ -38,11 +55,14 @@ label {
   display: grid;
   gap: 6px;
   font-weight: 600;
+  color: var(--text-color);
 }
 
 input,
 button {
-  border: 1px solid #c7d2da;
+  border: 1px solid var(--input-border);
+  background: var(--input-bg);
+  color: var(--text-color);
   border-radius: 8px;
   padding: 10px;
   font: inherit;
@@ -67,7 +87,7 @@ button.secondary {
 }
 
 .hint {
-  color: #52606d;
+  color: var(--hint-color);
 }
 
 .header-row {
@@ -80,28 +100,22 @@ button.secondary {
 .chart-grid {
   margin-top: 12px;
   display: grid;
-  gap: 16px;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 48px;
+  grid-template-columns: 1fr;
+  margin-bottom: 56px;
 }
 
-@media (prefers-color-scheme: dark) {
-  body {
-    background: #10131a;
-    color: #e6edf3;
-  }
+.chart-grid article {
+  height: 380px;
+  position: relative;
+}
 
-  .card {
-    background: #1a1f29;
-    box-shadow: none;
-  }
+.chart-grid canvas {
+  width: 100% !important;
+  height: 100% !important;
+}
 
-  input {
-    background: #121723;
-    color: #e6edf3;
-    border-color: #334155;
-  }
-
-  .hint {
-    color: #9aa8b5;
-  }
+/* Ensure headings inside cards match theme text color */
+.card h1, .card h2 {
+  color: var(--text-color);
 }
