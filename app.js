@@ -39,9 +39,9 @@ const lastUpdateText = document.getElementById("last-update");
 // Chart configurations
 const chartConfigs = [
   { key: "volume", label: "Restvolumen (m³)", color: "#d97706", elementId: "volume-chart" },
+  { key: "distance", label: "Restfüllhöhe (cm)", color: "#16a34a", elementId: "distance-chart" },
   { key: "temperature", label: "Temperatur (°C)", color: "#ef4444", elementId: "temperature-chart" },
   { key: "humidity", label: "Luftfeuchtigkeit (%)", color: "#2563eb", elementId: "humidity-chart" },
-  { key: "distance", label: "Restfüllhöhe (cm)", color: "#16a34a", elementId: "distance-chart" },
 ];
 
 // Room calculation constants
