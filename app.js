@@ -34,8 +34,9 @@ const loginForm = document.getElementById("login-form");
 const loginError = document.getElementById("login-error");
 const statusText = document.getElementById("status");
 const logoutButton = document.getElementById("logout-button");
+const lastUpdateText = document.getElementById("last-update");
 
-// Add volume to your chart configurations
+// Chart configurations
 const chartConfigs = [
   { key: "volume", label: "Restvolumen (m³)", color: "#d97706", elementId: "volume-chart" },
   { key: "temperature", label: "Temperatur (°C)", color: "#ef4444", elementId: "temperature-chart" },
@@ -88,9 +89,7 @@ function renderCharts(measurements) {
 
   const labels = measurements.map((item) => timestampToLabel(item.timestamp));
 
-  // Check browser dark mode preference dynamically
-// Standardmäßig annehmen, dass es KEIN Dark Mode ist (also weißer Hintergrund / dunkle Labels)
-  // Es ist nur dann Dark Mode, wenn der Browser dies explizit bestätigt ("matches === true")
+  // Default to light mode (white/dark text) if browser preference isn't explicitly dark
   const isDarkMode = window.matchMedia("(prefers-color-scheme: dark)").matches === true;
   
   const chartTextColor = isDarkMode ? "#e6edf3" : "#1f2933";
@@ -158,29 +157,34 @@ async function loadLast30Days() {
   const thirtyDaysAgoMillis = now - 30 * 24 * 60 * 60 * 1000;
   const thirtyDaysAgoTimestamp = Timestamp.fromMillis(thirtyDaysAgoMillis);
 
+  // Daten einmalig aus Firestore abrufen
   const timestampMeasurementsQuery = query(
     collection(db, "measurements"),
-    where("timestamp", ">=", thirtyDaysAgoTimestamp),
-    orderBy("timestamp", "asc")
+    where("timestamp", ">=", thirtyDaysAgoTimestamp)
   );
   const numericMeasurementsQuery = query(
     collection(db, "measurements"),
-    where("timestamp", ">=", Math.floor(thirtyDaysAgoMillis / 1000)),
-    orderBy("timestamp", "asc")
+    where("timestamp", ">=", Math.floor(thirtyDaysAgoMillis / 1000))
   );
+
   let snapshot = await getDocs(timestampMeasurementsQuery);
   if (snapshot.empty) {
     snapshot = await getDocs(numericMeasurementsQuery);
   }
 
-  const measurements = snapshot.docs
+  if (snapshot.empty) {
+    statusText.textContent = "Keine Messwerte in den letzten 30 Tagen gefunden.";
+    lastUpdateText.textContent = "";
+    destroyCharts();
+    return;
+  }
+
+  // 1. Daten in eine saubere Liste mappen und filtern
+  const allMeasurements = snapshot.docs
     .map((doc) => {
       const data = doc.data();
       const rawDistance = Number(data.distance);
       
-      // If rawDistance is 215, it's empty (0 height). 
-      // As rawDistance decreases (pellets rise), height increases.
-      // We subtract the 28cm offset.
       const effectiveDistance = rawDistance + SENSOR_OFFSET_CM;
       const pelletHeightCm = Math.max(0, Math.min(TOTAL_HEIGHT_CM, 215 - effectiveDistance));
       const volumeM3 = Number((FLOOR_AREA * (pelletHeightCm / 100)).toFixed(2));
@@ -202,28 +206,40 @@ async function loadLast30Days() {
         Number.isFinite(item.volume)
     );
 
-  if (!measurements.length) {
-    statusText.textContent = "Keine Messwerte in den letzten 30 Tagen gefunden.";
+  if (!allMeasurements.length) {
+    statusText.textContent = "Keine gültigen Messwerte gefunden.";
+    lastUpdateText.textContent = "";
     destroyCharts();
     return;
   }
 
-  statusText.textContent = `${measurements.length} Messwerte geladen.`;
-  renderCharts(measurements);
+  // 2. Liste nach dem größten (neuesten) Zeitstempel absteigend sortieren
+  allMeasurements.sort((a, b) => normalizeTimestampToMillis(b.timestamp) - normalizeTimestampToMillis(a.timestamp));
+
+  // 3. Das erste Element ist garantiert die absolut neueste Messung für den Text ganz oben
+  const latestMeasurement = allMeasurements[0];
+  lastUpdateText.textContent = `Letzte Messung: ${timestampToLabel(latestMeasurement.timestamp)}`;
+
+  // 4. Die neusten max. 30 Messwerte nehmen und für das Chart chronologisch umdrehen (ältester -> neuester)
+  const chartMeasurements = allMeasurements.slice(0, 30).reverse();
+
+  statusText.textContent = `${chartMeasurements.length} Messwerte geladen.`;
+  renderCharts(chartMeasurements);
 }
 
-loginForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
+// Login form submission handler
+loginForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
   loginError.textContent = "";
 
-  const email = document.getElementById("email").value.trim();
+  const email = document.getElementById("email").value;
   const password = document.getElementById("password").value;
 
   try {
     await signInWithEmailAndPassword(auth, email, password);
   } catch (error) {
-    loginError.textContent = `Login fehlgeschlagen: ${error.code}`;
-    console.error("Detailed Firebase Login Error:", error);
+    loginError.textContent = "Anmeldung fehlgeschlagen. Bitte E-Mail und Passwort prüfen.";
+    console.error(error);
   }
 });
 
@@ -237,6 +253,7 @@ onAuthStateChanged(auth, async (user) => {
     setDashboardVisible(false);
     destroyCharts();
     statusText.textContent = "";
+    lastUpdateText.textContent = "";
     return;
   }
 
