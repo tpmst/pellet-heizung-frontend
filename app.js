@@ -35,6 +35,7 @@ const loginError = document.getElementById("login-error");
 const statusText = document.getElementById("status");
 const logoutButton = document.getElementById("logout-button");
 const lastUpdateText = document.getElementById("last-update");
+const latestInfoText = document.getElementById("latest-info"); // NEU: Element für die Detailwerte
 
 // Chart configurations
 const chartConfigs = [
@@ -49,7 +50,7 @@ const ROOM_LENGTH = 4.13; // meters
 const ROOM_WIDTH = 2.15;  // meters
 const TOTAL_HEIGHT_CM = 187; // cm
 const SENSOR_OFFSET_CM = 28; // cm to remove
-const FLOOR_AREA = ROOM_LENGTH * ROOM_WIDTH; // 8.815 m²
+const FLOOR_AREA = ROOM_LENGTH * ROOM_WIDTH; // 8.8795 m²
 const chartInstances = new Map();
 
 function setLoginVisible(isVisible) {
@@ -89,9 +90,7 @@ function renderCharts(measurements) {
 
   const labels = measurements.map((item) => timestampToLabel(item.timestamp));
 
-  // Default to light mode (white/dark text) if browser preference isn't explicitly dark
   const isDarkMode = window.matchMedia("(prefers-color-scheme: dark)").matches === true;
-  
   const chartTextColor = isDarkMode ? "#e6edf3" : "#1f2933";
   const chartGridColor = isDarkMode ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)";
 
@@ -157,7 +156,6 @@ async function loadLast30Days() {
   const thirtyDaysAgoMillis = now - 30 * 24 * 60 * 60 * 1000;
   const thirtyDaysAgoTimestamp = Timestamp.fromMillis(thirtyDaysAgoMillis);
 
-  // Daten einmalig aus Firestore abrufen
   const timestampMeasurementsQuery = query(
     collection(db, "measurements"),
     where("timestamp", ">=", thirtyDaysAgoTimestamp)
@@ -175,11 +173,11 @@ async function loadLast30Days() {
   if (snapshot.empty) {
     statusText.textContent = "Keine Messwerte in den letzten 30 Tagen gefunden.";
     lastUpdateText.textContent = "";
+    latestInfoText.textContent = "";
     destroyCharts();
     return;
   }
 
-  // 1. Daten in eine saubere Liste mappen und filtern
   const allMeasurements = snapshot.docs
     .map((doc) => {
       const data = doc.data();
@@ -193,7 +191,7 @@ async function loadLast30Days() {
         timestamp: data.timestamp,
         temperature: Number(data.temperature),
         humidity: Number(data.humidity),
-        distance: pelletHeightCm, // <--- HIER JETZT DIE BERECHNETE FÜLLHÖHE
+        distance: pelletHeightCm,
         volume: volumeM3,
       };
     })
@@ -209,25 +207,26 @@ async function loadLast30Days() {
   if (!allMeasurements.length) {
     statusText.textContent = "Keine gültigen Messwerte gefunden.";
     lastUpdateText.textContent = "";
+    latestInfoText.textContent = "";
     destroyCharts();
     return;
   }
 
-  // 2. Liste nach dem größten (neuesten) Zeitstempel absteigend sortieren
   allMeasurements.sort((a, b) => normalizeTimestampToMillis(b.timestamp) - normalizeTimestampToMillis(a.timestamp));
 
-  // 3. Das erste Element ist garantiert die absolut neueste Messung für den Text ganz oben
+  // Letzte Messung für die Anzeige oben extrahieren
   const latestMeasurement = allMeasurements[0];
   lastUpdateText.textContent = `Letzte Messung: ${timestampToLabel(latestMeasurement.timestamp)}`;
+  
+  // NEU: Werte direkt unter der Zeit anzeigen
+  latestInfoText.textContent = `Aktuelles Restvolumen: ${latestMeasurement.volume} m³ | Temperatur: ${latestMeasurement.temperature} °C | Luftfeuchtigkeit: ${latestMeasurement.humidity} %`;
 
-  // 4. Die neusten max. 30 Messwerte nehmen und für das Chart chronologisch umdrehen (ältester -> neuester)
   const chartMeasurements = allMeasurements.slice(0, 30).reverse();
 
   statusText.textContent = `${chartMeasurements.length} Messwerte geladen.`;
   renderCharts(chartMeasurements);
 }
 
-// Login form submission handler
 loginForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   loginError.textContent = "";
@@ -254,6 +253,7 @@ onAuthStateChanged(auth, async (user) => {
     destroyCharts();
     statusText.textContent = "";
     lastUpdateText.textContent = "";
+    latestInfoText.textContent = "";
     return;
   }
 
