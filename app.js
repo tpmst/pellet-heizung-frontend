@@ -45,7 +45,7 @@ const chartConfigs = [
 ];
 
 // Room calculation constants
-const ROOM_LENGTH = 4.10; // meters
+const ROOM_LENGTH = 4.13; // meters
 const ROOM_WIDTH = 2.15;  // meters
 const TOTAL_HEIGHT_CM = 187; // cm
 const SENSOR_OFFSET_CM = 28; // cm to remove
