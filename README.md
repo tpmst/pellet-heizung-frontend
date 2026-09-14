@@ -1,8 +1,27 @@
 # Pellet-Heizung Dashboard
 
-Ein schlankes Web-Dashboard zur Überwachung einer Pellet-Heizung. Die Anwendung
-läuft vollständig im Browser, verwendet Firebase Authentication für den Login
-und liest Mess- und Heizungsdaten aus Cloud Firestore.
+Web-Dashboard zur Überwachung einer Pellet-Heizung. Das Frontend läuft im
+Browser, authentifiziert Benutzer über Firebase Authentication und liest
+Mess- und Heizungsdaten aus Cloud Firestore.
+
+Die Messwerte werden von einem ESP32 erfasst. Die ETA-Heizung selbst bleibt im
+lokalen Netzwerk: Der ESP32 liest ihre lokale ETA-API aus und überträgt die
+relevanten Daten anschließend in die Cloud. Dadurch muss die Heizung nicht
+direkt aus dem Internet erreichbar sein.
+
+## Systemübersicht
+
+```text
+ETA-Heizung ── lokale HTTP/XML-API ──> ESP32
+                                      │
+                                      └── WLAN + Firestore REST API ──> Firebase
+                                                                          │
+                                      Browser <── Firebase Auth/Firestore ──┘
+```
+
+Das Frontend ist Teil des Gesamtsystems und wird durch die Firmware aus dem
+separaten Repository [`tpmst/esp32-HC-SR04-AHT25-firebase`](https://github.com/tpmst/esp32-HC-SR04-AHT25-firebase)
+mit Daten versorgt.
 
 ## Funktionen
 
@@ -13,101 +32,109 @@ und liest Mess- und Heizungsdaten aus Cloud Firestore.
   - Temperatur in °C
   - Luftfeuchtigkeit in %
 - Anzeige der zuletzt eingegangenen Messung
-- Anzeige des aktuellen Heizungsstatus:
+- ETA-Heizungsstatus mit:
   - Ein-/Aus-Zustand
-  - Gesamtmenge aus ETA-XML-Daten
-  - geschätzte oder aus XML gelesene Aschemenge
-  - aktuelle Fehlermeldungen aus XML-Attributen
-- Helles und dunkles Farbschema über `prefers-color-scheme`
-- Optionale Firebase Cloud Functions für:
-  - Warn-E-Mails bei neuen Dokumenten in `warnings`
-  - regelmäßige Füllstands- und Geräteausfallprüfung
-  - E-Mails bei Änderungen des Heizungsstatus
+  - Brennstoffmenge aus ETA-XML
+  - Aschemenge beziehungsweise Schätzwert
+  - aktuellen Fehlermeldungen aus der ETA-API
+- helles und dunkles Farbschema über `prefers-color-scheme`
+- optionale Firebase Cloud Functions für Warnungen, Füllstandsprüfung,
+  Geräteausfall-Erkennung und Status-E-Mails
+
+## ETA-API-Connector
+
+Der Sketch `eta-api-connector.ino` im ESP32-Repository ist die Brücke zwischen
+der lokalen ETA-Heizungssteuerung und Firebase:
+
+1. Der ESP32 verbindet sich mit dem WLAN und liest die ETA-API über HTTP aus.
+2. Er fragt den Anlagenstatus, die Brennstoffmenge, die Aschemenge und
+   Fehlermeldungen als XML ab.
+3. Eine Änderung zwischen `Ein`, `Aus` und `Abstellen` wird erkannt und
+   unmittelbar in `heizung/status_heizung` gespeichert.
+4. Bei einer Statusänderung oder spätestens alle zwölf Stunden werden die
+   vollständigen XML-Daten als neues Dokument in `heizung` abgelegt.
+5. Nach dem Upload trennt sich der ESP32 vom WLAN und geht für fünf Minuten in
+   Deep Sleep.
+
+Der Connector benötigt daher keinen öffentlich erreichbaren ETA-Endpunkt. Nur
+der ESP32 muss gleichzeitig Zugriff auf die lokale ETA-IP-Adresse und auf
+Firebase haben. Die im Sketch konfigurierten ETA-Pfade sind:
+
+| Daten | ETA-API-Pfad |
+| --- | --- |
+| Betriebsstatus | `/user/var/264/10891/0/0/12080` |
+| Aschemenge | `/user/var/264/10891/0/0/12013` |
+| Brennstoffmenge | `/user/var/264/10891/0/0/12016` |
+| Fehlermeldungen | `/user/errors` |
+
+### Connector einrichten
+
+1. [`eta-api-connector.ino`](https://github.com/tpmst/esp32-HC-SR04-AHT25-firebase/blob/main/eta-api-connector.ino)
+   in der Arduino IDE oder PlatformIO öffnen.
+2. WLAN, Firebase-Projekt und Firestore-Host eintragen.
+3. `etaHost` auf die lokale IP-Adresse der ETA-Heizung setzen. Der Connector
+   verwendet standardmäßig Port `8080`.
+4. Den Sketch auf den ESP32 laden und den seriellen Monitor zur Kontrolle der
+   WLAN-, ETA- und Firestore-Verbindungen verwenden.
+
+Geheimnisse wie WLAN-Passwort und Firestore-Schlüssel dürfen nicht in ein
+öffentliches Repository gelangen. Die Firestore Security Rules und die
+Authentifizierung des Connectors müssen so aufeinander abgestimmt sein, dass
+der Connector schreiben und das Dashboard ausschließlich lesend auf die
+benötigten Daten zugreifen kann.
 
 ## Voraussetzungen
 
-- Node.js 24 oder kompatible Node.js-Version für die Cloud Functions
-- Ein Firebase-Projekt mit:
-  - aktiviertem Firestore
-  - aktivierter Authentication-Methode **E-Mail/Passwort**
-  - mindestens einem angelegten Benutzer
-- Für die Cloud Functions zusätzlich ein Gmail-/SMTP-Konto und ein
-  Firebase-Projekt mit aktiviertem Cloud Scheduler
+- Node.js für das Frontend und die Cloud Functions
+- ein Firebase-Projekt mit aktiviertem Firestore
+- aktivierte Firebase-Authentication-Methode **E-Mail/Passwort**
+- mindestens ein angelegter Firebase-Benutzer
+- für den Connector: ESP32, WLAN und eine im lokalen Netz erreichbare ETA-API
+- für die Cloud Functions zusätzlich Firebase CLI, Cloud Scheduler und ein
+  Gmail-/SMTP-Konto
 
-## Installation und lokaler Start
+## Frontend lokal starten
 
-1. Repository klonen und in das Projektverzeichnis wechseln:
+Repository klonen und Abhängigkeiten installieren:
 
-   ```bash
-   git clone https://github.com/tpmst/pellet-heizung-frontend.git
-   cd pellet-heizung-frontend
-   ```
-
-2. Abhängigkeiten installieren:
-
-   ```bash
-   npm install
-   ```
-
-3. Firebase-Konfiguration anlegen:
-
-   ```bash
-   copy config.js.example config.js
-   ```
-
-   Unter macOS/Linux:
-
-   ```bash
-   cp config.js.example config.js
-   ```
-
-   Anschließend die Werte in `config.js` aus den Firebase-Web-App-Einstellungen
-   eintragen. `config.js` wird nicht versioniert und darf keine Zugangsdaten
-   enthalten, die als Server-Geheimnisse gedacht sind.
-
-4. Einen lokalen HTTP-Server starten:
-
-   ```bash
-   npx vite --host 127.0.0.1
-   ```
-
-   Danach die von Vite ausgegebene lokale URL im Browser öffnen. Die HTML-Datei
-   sollte nicht direkt über `file://` geöffnet werden, weil das ES-Modul
-   `app.js` und Firebase einen HTTP-Kontext benötigen.
-
-## Firebase-Konfiguration
-
-Die Web-Konfiguration wird in `config.js` erwartet:
-
-```js
-export const firebaseConfig = {
-  apiKey: "...",
-  authDomain: "...",
-  projectId: "...",
-  storageBucket: "...",
-  messagingSenderId: "...",
-  appId: "...",
-  measurementId: "..."
-};
+```bash
+git clone https://github.com/tpmst/pellet-heizung-frontend.git
+cd pellet-heizung-frontend
+npm install
 ```
 
-Die benötigten Werte stehen in der Firebase Console unter
-**Project settings → Your apps → SDK setup and configuration**.
+Firebase-Konfiguration aus der Vorlage erzeugen:
 
-Firestore- und Authentication-Regeln müssen im Firebase-Projekt so konfiguriert
-sein, dass nur angemeldete Benutzer die Daten lesen können. Die im Frontend
-sichtbare Firebase-Web-Konfiguration ist kein Ersatz für Firestore Security
-Rules.
+```bash
+copy config.js.example config.js
+```
+
+Unter macOS/Linux:
+
+```bash
+cp config.js.example config.js
+```
+
+Danach die Werte aus **Project settings → Your apps → SDK setup and
+configuration** in `config.js` eintragen. Die Datei wird nicht versioniert.
+
+Lokalen HTTP-Server starten:
+
+```bash
+npx vite --host 127.0.0.1
+```
+
+Die von Vite ausgegebene URL im Browser öffnen. `index.html` sollte nicht direkt
+über `file://` geöffnet werden, weil ES-Module und Firebase einen HTTP-Kontext
+benötigen.
 
 ## Firestore-Datenmodell
 
-### Collection `measurements`
+### `measurements`
 
-Das Dashboard liest die letzten 30 Tage aus der Collection `measurements`.
-`timestamp` kann entweder ein Firestore `Timestamp` oder ein Unix-Zeitstempel
-in Sekunden (alternativ Millisekunden) sein.
-
-Beispieldokument:
+Das Dashboard liest die letzten 30 Tage aus `measurements`. `timestamp` kann ein
+Firestore `Timestamp` oder ein Unix-Zeitstempel in Sekunden (alternativ
+Millisekunden) sein.
 
 ```json
 {
@@ -118,10 +145,8 @@ Beispieldokument:
 }
 ```
 
-`temperature`, `humidity` und `distance` müssen numerisch sein. Ungültige
-Dokumente werden aus der Darstellung entfernt.
-
-Die Rohdistanz wird für die Anzeige in eine Füllhöhe umgerechnet:
+`temperature`, `humidity` und `distance` müssen numerisch sein. Die Rohdistanz
+wird anhand der Anlagengeometrie in Füllhöhe und Restvolumen umgerechnet:
 
 - Raumlänge: `4,13 m`
 - Raumbreite: `2,15 m`
@@ -129,20 +154,20 @@ Die Rohdistanz wird für die Anzeige in eine Füllhöhe umgerechnet:
 - Sensor-Offset: `28 cm`
 - Grundfläche: `8,8795 m²`
 
-Dabei wird die Rohdistanz um den Sensor-Offset ergänzt, auf den gültigen
-Höhenbereich begrenzt und daraus das Restvolumen berechnet.
+### `heizung`
 
-### Collection `heizung`
-
-Für die Anzeige des aktuellen Anlagenstatus wird das neueste Dokument aus
-`heizung`, sortiert nach `timestamp`, verwendet. Unterstützte Felder sind:
+Die ETA-Daten werden als zeitgestempelte Dokumente in `heizung` gespeichert.
+Zusätzlich aktualisiert der Connector bei Statusänderungen das feste Dokument
+`heizung/status_heizung`.
 
 ```json
 {
   "timestamp": 1710000000,
   "ist_an": true,
+  "xml_status": "<value strValue=\"Ein\" />",
   "xml_menge": "<value strValue=\"5\" unit=\"kg\" />",
-  "xml_asche": "<value strValue=\"0.03\" unit=\"kg\" />"
+  "xml_asche": "<value strValue=\"0.03\" unit=\"kg\" />",
+  "xml_errors": ""
 }
 ```
 
@@ -151,38 +176,25 @@ aktuelle Meldungen beziehungsweise Fehler angezeigt.
 
 ## Cloud Functions
 
-Die Funktionen liegen im Verzeichnis `functions` und werden separat installiert:
+Die Funktionen liegen in `functions` und werden separat installiert und
+bereitgestellt:
 
 ```bash
 cd functions
 npm install
-```
-
-Für den Versand von E-Mails werden die Firebase-Secrets `GMAIL_USER` und
-`GMAIL_PASS` benötigt:
-
-```bash
 firebase functions:secrets:set GMAIL_USER
 firebase functions:secrets:set GMAIL_PASS
-```
-
-Anschließend können die Functions mit der Firebase CLI bereitgestellt werden:
-
-```bash
 npm run deploy
 ```
 
-Enthaltene Funktionen:
-
 | Funktion | Auslöser | Zweck |
 | --- | --- | --- |
-| `sendWarningEmail` | Neues Dokument in `warnings/{warningId}` | Sendet Warnungen an alle Firebase-Benutzer; maximal drei E-Mails pro Tag mit mindestens sechs Stunden Abstand |
-| `checkDailyPelletLevel` | Zeitplan `0 8 */2 * *` | Prüft alle zwei Tage um 08:00 Uhr den Füllstand und erkennt Geräteausfälle nach mehr als 50 Stunden ohne Messung |
-| `sendHeatingStatusEmail` | Änderung an `heizung/status_heizung` | Informiert über das Ein- oder Ausschalten der Heizung |
+| `sendWarningEmail` | Neues Dokument in `warnings/{warningId}` | Warnungen an Firebase-Benutzer; maximal drei E-Mails pro Tag mit mindestens sechs Stunden Abstand |
+| `checkDailyPelletLevel` | Zeitplan `0 8 */2 * *` | Füllstandsprüfung alle zwei Tage um 08:00 Uhr und Geräteausfall-Erkennung nach mehr als 50 Stunden ohne Messung |
+| `sendHeatingStatusEmail` | Änderung an `heizung/status_heizung` | E-Mail beim Ein- oder Ausschalten der Heizung |
 
-Die Füllstandsprüfung kann über
-`metadata/settings.levelCheckEnabled` deaktiviert werden. Fehlt das Feld, ist
-die Prüfung standardmäßig aktiviert.
+Die Füllstandsprüfung kann über `metadata/settings.levelCheckEnabled`
+deaktiviert werden. Fehlt das Feld, ist sie standardmäßig aktiviert.
 
 ## Projektstruktur
 
@@ -190,7 +202,7 @@ die Prüfung standardmäßig aktiviert.
 .
 ├── app.js                 # Firebase-Initialisierung, Authentifizierung und Dashboard-Logik
 ├── config.js.example      # Vorlage für die Firebase-Web-Konfiguration
-├── index.html             # Markup für Login, Statusanzeige und Diagramme
+├── index.html             # Login, Statusanzeige und Diagramme
 ├── styles.css             # Layout und helles/dunkles Farbschema
 └── functions/
     ├── index.js           # Firebase Cloud Functions
