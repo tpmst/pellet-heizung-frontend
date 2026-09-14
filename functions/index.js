@@ -1,4 +1,4 @@
-const {onDocumentCreated} = require("firebase-functions/v2/firestore");
+const {onDocumentCreated, onDocumentUpdated} = require("firebase-functions/v2/firestore");
 const {logger} = require("firebase-functions");
 const {getAuth} = require("firebase-admin/auth");
 const {initializeApp} = require("firebase-admin/app");
@@ -187,6 +187,52 @@ exports.checkDailyPelletLevel = onSchedule({
     }
   } catch (error) {
     logger.error("Fehler bei der täglichen Füllstandsprüfung:", error);
+  }
+
+  return null;
+});
+
+// ==========================================
+// NEU: Heizungsstatus-Änderung überwachen
+// ==========================================
+exports.sendHeatingStatusEmail = onDocumentUpdated({
+  document: "heizung/status_heizung",
+  secrets: ["GMAIL_USER", "GMAIL_PASS"],
+}, async (event) => {
+  const change = event.data;
+  if (!change) return null;
+
+  const beforeData = change.before.data();
+  const afterData = change.after.data();
+
+  const oldStatus = beforeData.ist_an;
+  const newStatus = afterData.ist_an;
+
+  // Prüfen, ob sich der Status tatsächlich geändert hat
+  if (oldStatus === newStatus) {
+    return null;
+  }
+
+  const statusTextStr = newStatus ? "eingeschaltet" : "ausgeschaltet";
+  const subjectTitle = newStatus ? "🔥 Heizung eingeschaltet" : "❄️ Heizung ausgeschaltet";
+  const messageBody = `Hallo,\n\nDer Status der Pellet-Heizung hat sich geändert:\n\nDie Heizung wurde soeben **${statusTextStr}**.\n\nViele Grüße\nDein Pellet-System`;
+
+  try {
+    const listUsersResult = await getAuth().listUsers();
+    const emails = listUsersResult.users.map((user) => user.email).filter(Boolean);
+
+    if (emails.length === 0) return null;
+
+    await transporter.sendMail({
+      from: `"Pellet System" <${process.env.GMAIL_USER}>`,
+      bcc: emails,
+      subject: subjectTitle,
+      text: messageBody,
+    });
+
+    logger.info(`Heizungsstatus-E-Mail gesendet. Neuer Status: ${statusTextStr}`);
+  } catch (error) {
+    logger.error("Fehler beim Senden der Heizungsstatus-E-Mail:", error);
   }
 
   return null;

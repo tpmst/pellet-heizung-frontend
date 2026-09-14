@@ -35,7 +35,7 @@ const loginError = document.getElementById("login-error");
 const statusText = document.getElementById("status");
 const logoutButton = document.getElementById("logout-button");
 const lastUpdateText = document.getElementById("last-update");
-const latestInfoText = document.getElementById("latest-info"); // NEU: Element für die Detailwerte
+const latestInfoText = document.getElementById("latest-info");
 
 // Chart configurations
 const chartConfigs = [
@@ -53,6 +53,67 @@ const SENSOR_OFFSET_CM = 28; // cm to remove
 const FLOOR_AREA = ROOM_LENGTH * ROOM_WIDTH; // 8.8795 m²
 const chartInstances = new Map();
 
+// DOM-Referenzen für Heizung
+const heatingStatusSection = document.getElementById("heating-status-section");
+const heatingTimestampText = document.getElementById("heating-timestamp");
+const valIstAn = document.getElementById("val-ist-an");
+const valAsche = document.getElementById("val-asche");
+const valMenge = document.getElementById("val-menge");
+const heatingErrorsList = document.getElementById("heating-errors-list");
+
+// Hilfsfunktion: Parst einen ETA-XML-String und gibt den 'strValue' oder Text aus
+function parseEtaXml(xmlString) {
+  if (!xmlString) return "-";
+  try {
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+    
+    const valueEl = xmlDoc.querySelector("value");
+    if (valueEl) {
+      const strVal = valueEl.getAttribute("strValue");
+      const unit = valueEl.getAttribute("unit") || "";
+      const innerText = valueEl.textContent || "";
+      
+      if (strVal) {
+        return unit ? `${strVal} ${unit}` : strVal;
+      }
+      return innerText;
+    }
+    
+    const fubEls = xmlDoc.querySelectorAll("fub");
+    if (fubEls.length > 0) {
+      const names = Array.from(fubEls).map(el => el.getAttribute("name")).filter(Boolean);
+      return `Systeme: ${names.join(", ")}`;
+    }
+  } catch (e) {
+    console.error("Fehler beim Parsen des XML:", e);
+  }
+  return "-";
+}
+
+// Hilfsfunktion: Sucht nach Attributen mit msg="..." im XML (für Fehler)
+function parseEtaErrors(xmlString) {
+  if (!xmlString) return [];
+  try {
+    const parser = new DOMParser();
+    const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+    const errors = [];
+
+    const elementsWithMsg = xmlDoc.querySelectorAll("[msg]");
+    elementsWithMsg.forEach(el => {
+      const msgText = el.getAttribute("msg");
+      if (msgText && msgText.trim() !== "") {
+        errors.push(msgText);
+      }
+    });
+
+    return errors;
+  } catch (e) {
+    console.error("Fehler beim Parsen der XML-Fehler:", e);
+    return [];
+  }
+}
+
 function setLoginVisible(isVisible) {
   loginSection.classList.toggle("hidden", !isVisible);
 }
@@ -65,11 +126,9 @@ function normalizeTimestampToMillis(value) {
   if (value && typeof value.toMillis === "function") {
     return value.toMillis();
   }
-
   if (typeof value === "number") {
     return value < 1e12 ? value * 1000 : value;
   }
-
   return NaN;
 }
 
@@ -89,7 +148,6 @@ function renderCharts(measurements) {
   destroyCharts();
 
   const labels = measurements.map((item) => timestampToLabel(item.timestamp));
-
   const isDarkMode = window.matchMedia("(prefers-color-scheme: dark)").matches === true;
   const chartTextColor = isDarkMode ? "#e6edf3" : "#1f2933";
   const chartGridColor = isDarkMode ? "rgba(255, 255, 255, 0.1)" : "rgba(0, 0, 0, 0.1)";
@@ -118,30 +176,16 @@ function renderCharts(measurements) {
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: {
-            labels: {
-              color: chartTextColor
-            }
-          }
+          legend: { labels: { color: chartTextColor } }
         },
         scales: {
           x: {
-            ticks: {
-              color: chartTextColor,
-              maxRotation: 45,
-              minRotation: 45,
-            },
-            grid: {
-              color: chartGridColor
-            }
+            ticks: { color: chartTextColor, maxRotation: 45, minRotation: 45 },
+            grid: { color: chartGridColor }
           },
           y: {
-            ticks: {
-              color: chartTextColor
-            },
-            grid: {
-              color: chartGridColor
-            }
+            ticks: { color: chartTextColor },
+            grid: { color: chartGridColor }
           }
         },
       },
@@ -184,7 +228,7 @@ async function loadLast30Days() {
       const rawDistance = Number(data.distance);
       
       const effectiveDistance = rawDistance + SENSOR_OFFSET_CM;
-      const pelletHeightCm = Math.max(0, Math.min(TOTAL_HEIGHT_CM, 215 - effectiveDistance));
+      const pelletHeightCm = Math.max(0, Math.min(TOTAL_HEIGHT_CM, TOTAL_HEIGHT_CM - effectiveDistance));
       const volumeM3 = Number((FLOOR_AREA * (pelletHeightCm / 100)).toFixed(2));
 
       return {
@@ -214,17 +258,86 @@ async function loadLast30Days() {
 
   allMeasurements.sort((a, b) => normalizeTimestampToMillis(b.timestamp) - normalizeTimestampToMillis(a.timestamp));
 
-  // Letzte Messung für die Anzeige oben extrahieren
   const latestMeasurement = allMeasurements[0];
   lastUpdateText.textContent = `Letzte Messung: ${timestampToLabel(latestMeasurement.timestamp)}`;
-  
-  // NEU: Werte direkt unter der Zeit anzeigen
   latestInfoText.textContent = `Aktuelles Restvolumen: ${latestMeasurement.volume} m³ | Temperatur: ${latestMeasurement.temperature} °C | Luftfeuchtigkeit: ${latestMeasurement.humidity} %`;
 
   const chartMeasurements = allMeasurements.slice(0, 30).reverse();
 
   statusText.textContent = `${chartMeasurements.length} Messwerte geladen.`;
   renderCharts(chartMeasurements);
+}
+
+// Funktion zum Laden des aktuellen Heizungsstatus aus der "heizung"-Collection
+async function loadHeatingStatus() {
+  try {
+    const q = query(collection(db, "heizung"), orderBy("timestamp", "desc"));
+    const snapshot = await getDocs(q);
+
+    if (!snapshot.empty && heatingStatusSection) {
+      const latestHeatingDoc = snapshot.docs[0].data();
+      
+      heatingStatusSection.classList.remove("hidden");
+      
+      if (heatingTimestampText) {
+        heatingTimestampText.textContent = `Letztes Update der Anlage: ${timestampToLabel(latestHeatingDoc.timestamp)}`;
+      }
+      
+      // ist_an Status
+      const isAn = latestHeatingDoc.ist_an;
+      if (valIstAn) {
+        valIstAn.textContent = isAn === true ? "🟢 An" : "🔴 Aus";
+        valIstAn.style.color = isAn === true ? "green" : "red";
+      }
+      
+      // Gesamtmenge auslesen (z.B. "5 kg")
+      const mengeText = parseEtaXml(latestHeatingDoc.xml_menge);
+      if (valMenge) valMenge.textContent = mengeText;
+
+      // Asche berechnen basierend auf der Menge (ca. 0.5% bis 0.7% Ascheanteil bei Pellets)
+      if (valAsche) {
+        const rawMengeNum = parseFloat(mengeText); // Extrahiert die Zahl aus "5 kg" -> 5
+        if (!isNaN(rawMengeNum) && rawMengeNum > 0) {
+          const estimatedAshKg = (rawMengeNum * 0.006).toFixed(2); // ca. 0.6% Aschefaktor
+          valAsche.textContent = `ca. ${estimatedAshKg} kg (geschätzt)`; // Fallback falls parsen fehlschlägt: normaler XML-Parser
+        } else {
+          // Fallback falls parsen fehlschlägt: normaler XML-Parser
+          valAsche.textContent = parseEtaXml(latestHeatingDoc.xml_asche);
+        }
+      }
+
+      // Fehler auslesen (msg="...")
+      if (heatingErrorsList) {
+        let allErrors = [];
+        ["xml_asche", "xml_menge"].forEach(field => {
+          if (latestHeatingDoc[field]) {
+            const foundErrors = parseEtaErrors(latestHeatingDoc[field]);
+            allErrors = allErrors.concat(foundErrors);
+          }
+        });
+
+        allErrors = [...new Set(allErrors)];
+        heatingErrorsList.innerHTML = "";
+        if (allErrors.length > 0) {
+          allErrors.forEach(err => {
+            const li = document.createElement("li");
+            li.textContent = err;
+            heatingErrorsList.appendChild(li);
+          });
+        } else {
+          const li = document.createElement("li");
+          li.textContent = "Keine aktiven Fehler gemeldet.";
+          li.style.color = "white";
+          heatingErrorsList.appendChild(li);
+        }
+      }
+      
+    } else if (heatingStatusSection) {
+      heatingStatusSection.classList.add("hidden");
+    }
+  } catch (error) {
+    console.error("Fehler beim Laden des Heizungsstatus:", error);
+  }
 }
 
 loginForm.addEventListener("submit", async (e) => {
@@ -254,6 +367,7 @@ onAuthStateChanged(auth, async (user) => {
     statusText.textContent = "";
     lastUpdateText.textContent = "";
     latestInfoText.textContent = "";
+    if (heatingStatusSection) heatingStatusSection.classList.add("hidden");
     return;
   }
 
@@ -262,7 +376,10 @@ onAuthStateChanged(auth, async (user) => {
   statusText.textContent = "Lade Daten…";
 
   try {
-    await loadLast30Days();
+    await Promise.all([
+      loadLast30Days(),
+      loadHeatingStatus()
+    ]);
   } catch (error) {
     statusText.textContent = "Fehler beim Laden der Daten aus Firestore.";
     console.error(error);

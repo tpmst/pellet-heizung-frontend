@@ -29,18 +29,44 @@
         <p id="login-error" class="error" role="alert"></p>
       </section>
 
+      <!-- Wichtig: heating-status-section ID hinzugefügt, damit das Skript es ein-/ausblenden kann -->
       <section id="dashboard-section" class="card hidden">
+
+        <div id="heating-status-section" class="hidden" style="margin-top: 20px;">
+          <h2>Heizungs-Status (ETA Live-Daten)</h2>
+          <p id="heating-timestamp" class="hint"></p>
+          
+          <div id="heating-details-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-top: 15px;">
+            <div style="background: rgba(0,0,0,0.03); padding: 12px; border-radius: 8px;">
+              <strong>An-Zustand:</strong> <span id="val-ist-an">-</span>
+            </div>
+            <div style="background: rgba(0,0,0,0.03); padding: 12px; border-radius: 8px;">
+              <strong>Asche:</strong> <span id="val-asche">-</span>
+            </div>
+            <div style="background: rgba(0,0,0,0.03); padding: 12px; border-radius: 8px;">
+              <strong>Gesamtmenge:</strong> <span id="val-menge">-</span>
+            </div>
+          </div>
+
+          <!-- NEU: Container für die Fehler-Liste mit msg="" -->
+          <div style="margin-top: 15px; background: rgba(239, 68, 68, 0.05); padding: 12px; border-radius: 8px; border: 1px solid rgba(239, 68, 68, 0.2);">
+            <strong style="color: #ef4444;">Aktuelle Meldungen / Fehler:</strong>
+            <ul id="heating-errors-list" style="margin: 5px 0 0 20px; padding: 0; color: #1f2933;">
+              <li>Keine Fehler geladen.</li>
+            </ul>
+          </div>
+        </div>
+
         <div class="header-row">
           <h1>Messwerte der letzten 30 Tage</h1>
           <button id="logout-button" type="button" class="secondary">Logout</button>
         </div>
         
         <p id="last-update" class="hint" style="margin-top: 4px; font-weight: 500;"></p>
-        <!-- NEU: Zeile für die aktuellen Zusatzwerte -->
         <p id="latest-info" class="hint" style="margin-top: 2px; font-weight: 600; color: #d97706;"></p>
         <p id="status" class="hint">Lade Daten…</p>
 
-        <div class="chart-grid">
+        <div class="chart-grid" style="margin-top: 25px;">
           <article>
             <h2>Restvolumen (m³)</h2>
             <canvas id="volume-chart"></canvas>
