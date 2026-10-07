@@ -48,8 +48,8 @@ const chartConfigs = [
 // Room calculation constants
 const ROOM_LENGTH = 4.13; // meters
 const ROOM_WIDTH = 2.15;  // meters
-const TOTAL_HEIGHT_CM = 187; // cm
-const SENSOR_OFFSET_CM = 28; // cm to remove
+const TOTAL_HEIGHT_CM = 215; // cm
+const SENSOR_OFFSET_CM = 2; // cm to remove
 const FLOOR_AREA = ROOM_LENGTH * ROOM_WIDTH; // 8.8795 m²
 const chartInstances = new Map();
 

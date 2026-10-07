@@ -237,3 +237,100 @@ exports.sendHeatingStatusEmail = onDocumentUpdated({
 
   return null;
 });
+
+// Hilfsfunktion zum Extrahieren von Werten aus ETA-XML-Strings in Node.js
+function extractValueFromXml(xmlString) {
+  if (!xmlString || typeof xmlString !== "string") return 0;
+  try {
+    const match = xmlString.match(/<value[^>]*>([\s\S]*?)<\/value>/);
+    if (match && match[1]) {
+      const num = Number(match[1].trim());
+      return isNaN(num) ? 0 : num;
+    }
+  } catch (e) {
+    logger.error("Fehler beim XML parsen:", e);
+  }
+  return 0;
+}
+
+// ==========================================
+// Jährliche Verbrauchsbilanz am 1. Juli (Differenz aus Gesamtzähler)
+// ==========================================
+exports.calculateYearlyPelletConsumption = onSchedule({
+  schedule: "0 3 1 7 *", // Läuft jedes Jahr am 1. Juli um 03:00 Uhr nachts
+}, async (event) => {
+  try {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const startYear = currentYear - 1;
+    const endYear = currentYear;
+    const docId = `${startYear}_${endYear}`; // z.B. "2025_2026"
+
+    logger.info(`Starte jährliche Verbrauchsbilanz (Gesamtzähler-Differenz) für die Heizperiode ${docId}...`);
+
+    // 1. Startzeitpunkt definieren: 1. Juli des Vorjahres (00:00:00 Uhr)
+    const startDate = new Date(startYear, 6, 1, 0, 0, 0);
+    const startTimestampMs = startDate.getTime();
+
+    // 2. Alle Heizungsdaten seit dem 1. Juli des Vorjahres abrufen
+    const heatingRef = db.collection("heizung");
+    const snapshot = await heatingRef
+        .where("timestamp", ">=", startTimestampMs)
+        .orderBy("timestamp", "asc")
+        .get();
+
+    if (snapshot.empty || snapshot.size < 2) {
+      logger.warn("Nicht genügend Heizungsdaten für die jährliche Bilanz gefunden.");
+      return null;
+    }
+
+    const docs = snapshot.docs.map((doc) => doc.data());
+
+    let startValue = null;
+    let endValue = null;
+
+    // 3. Den ersten und den letzten gültigen Zählerstand im Zeitraum finden
+    docs.forEach((m) => {
+      if (m.xml_menge) {
+        const menge = extractValueFromXml(m.xml_menge);
+        
+        // Den ersten gefundenen Wert als Start-Zählerstand merken
+        if (startValue === null) {
+          startValue = menge;
+        }
+        // Den End-Zählerstand bei jedem Schritt überschreiben, 
+        // sodass am Ende der allerletzte Wert des Jahres übrig bleibt
+        endValue = menge;
+      }
+    });
+
+    if (startValue === null || endValue === null) {
+      logger.warn("Keine gültigen xml_menge-Zählerstände für die Bilanz gefunden.");
+      return null;
+    }
+
+    // Verbrauch = Endstand minus Startstand (verhindert negative Werte, falls der Zähler getauscht wurde)
+    const burnedMenge = Math.max(0, endValue - startValue);
+
+    logger.info(`Start-Zählerstand: ${startValue}, End-Zählerstand: ${endValue}, Verbrauch: ${burnedMenge}`);
+
+    // 4. In Firestore unter der Collection "heizperiode" abspeichern
+    const reportData = {
+      heizperiode: docId,
+      startDatum: startDate.toISOString(),
+      endDatum: now.toISOString(),
+      startZaehlerstand: startValue,
+      endZaehlerstand: endValue,
+      gesamtXmlMengeVerbraucht: burnedMenge,
+      erstelltAm: Date.now(),
+    };
+
+    await db.collection("heizperiode").doc(docId).set(reportData);
+    logger.info(`Erfolgreich Heizperiode ${docId} in Firestore gespeichert.`);
+
+  } catch (error) {
+    logger.error("Fehler bei der jährlichen Verbrauchsbilanz:", error);
+  }
+
+  return null;
+});
