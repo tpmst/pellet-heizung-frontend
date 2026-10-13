@@ -334,3 +334,67 @@ exports.calculateYearlyPelletConsumption = onSchedule({
 
   return null;
 });
+
+
+const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { logger } = require("firebase-functions");
+// admin.initializeApp() und getFirestore() / db sowie nodemailer (oder dein E-Mail-Dienst) 
+// müssen entsprechend in deinem Projekt initialisiert sein.
+
+export const checkAshBoxOnNewHeatingData = onDocumentCreated("heizung/{docId}", async (event) => {
+  try {
+    const snapshot = event.data;
+    if (!snapshot) {
+      logger.warn("Keine Daten im erstellten Dokument gefunden.");
+      return null;
+    }
+
+    const data = snapshot.data();
+    const xmlAsche = data.xml_asche;
+
+    if (!xmlAsche) {
+      logger.info("Kein xml_asche-Wert im neuen Dokument vorhanden.");
+      return null;
+    }
+
+    // Hilfsfunktion zum Extrahieren des numerischen Wertes aus dem XML-String
+    // Beispiel: '<value ...>58</value>' -> 58
+    const extractValueFromXml = (xmlString) => {
+      const match = xmlString.match(/>([^<]+)</);
+      return match ? parseFloat(match[1]) : null;
+    };
+
+    const ascheMenge = extractValueFromXml(xmlAsche);
+
+    if (ascheMenge === null) {
+      logger.warn("Konnte den Wert aus xml_asche nicht parsen:", xmlAsche);
+      return null;
+    }
+
+    logger.info(`Aktueller Asche-Wert aus xml_asche: ${ascheMenge} kg`);
+
+    // Prüfen, ob der Wert über 30 kg liegt
+    if (ascheMenge > 30) {
+      logger.warn(`Aschebox-Grenzwert überschritten (${ascheMenge} kg). Sende Benachrichtigungs-E-Mail...`);
+
+      // E-Mail-Inhalt definieren
+      const recipient = ["deine-email@example.com"]; // Passe hier deine Empfänger-Adresse an
+      const subject = "⚠️ Aschebox muss geleert werden!";
+      const body = `Hallo,\n\nDie Aschebox hat einen Stand von ${ascheMenge} kg erreicht und muss dringend geleert werden.\n\nViele Grüße\nDein Heizungs-Monitor`;
+
+      // E-Mail über den Versand-Dienst senden
+      await gmail_bard.send_message({
+        to: recipient,
+        subject: subject,
+        body: body,
+      });
+
+      logger.info("Benachrichtigungs-E-Mail erfolgreich versendet.");
+    }
+
+  } catch (error) {
+    logger.error("Fehler bei der Überprüfung der Aschebox:", error);
+  }
+
+  return null;
+});
